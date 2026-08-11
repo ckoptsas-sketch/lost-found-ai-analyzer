@@ -57,23 +57,33 @@ if check_password():
 
     uploaded_files = st.file_uploader(
         "Τράβηξε φωτογραφία ή επίλεξε αρχεία από τη συλλογή σου", 
-        type=["png", "jpg", "jpeg"], 
+        type=["png", "jpg", "jpeg", "webp"], 
         accept_multiple_files=True,
         key="inbound_uploader"
     )
 
+    MAX_SIZE = 10 * 1024 * 1024  # 10 MB
+
     if uploaded_files:
         for file in uploaded_files:
             try:
-                bytes_data = file.getvalue()
-                pil_image = Image.open(io.BytesIO(bytes_data))
-                pil_image = pil_image.convert("RGB")
+                if file.size > MAX_SIZE:
+                    st.error(f"⚠️ Το αρχείο '{file.name}' είναι πολύ μεγάλο. Μέγιστο επιτρεπτό: 10MB.")
+                    continue
+
+                image_bytes = file.getvalue()
+
+                pil_image = Image.open(io.BytesIO(image_bytes))
+                pil_image.verify()  # ελέγχει αν είναι έγκυρη εικόνα
+
+                pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
                 if file.name not in [x['id'] for x in st.session_state.photo_buffer]:
                     st.session_state.photo_buffer.append({"id": file.name, "image": pil_image})
-                    st.success(f"Η φωτογραφία '{file.name}' προστέθηκε στο κύμα.")
+                    st.success(f"✅ Η φωτογραφία '{file.name}' προστέθηκε στο κύμα.")
+
             except UnidentifiedImageError:
-                st.error(f"⚠️ Το αρχείο '{file.name}' δεν είναι έγκυρη εικόνα. Παρακαλώ επιλέξτε ξανά.")
+                st.error(f"⚠️ Το αρχείο '{file.name}' δεν είναι έγκυρη εικόνα.")
             except Exception as e:
                 st.error(f"⚠️ Σφάλμα στο αρχείο '{file.name}': {e}")
 
@@ -149,7 +159,7 @@ if check_password():
         
         wt_screen_file = st.file_uploader(
             "Ανέβασε τη φωτογραφία της οθόνης WorldTracer (PIR & Tags)", 
-            type=["png", "jpg", "jpeg"], 
+            type=["png", "jpg", "jpeg", "webp"], 
             key="wt_uploader"
         )
         
@@ -157,44 +167,51 @@ if check_password():
             if st.button("💾 ΑΥΤΟΜΑΤΗ ΕΠΑΛΗΘΕΥΣΗ & ΚΛΕΙΣΙΜΟ"):
                 with st.spinner("Ανάγνωση οθόνης συστήματος και σύγκριση..."):
                     try:
-                        pil_wt = Image.open(io.BytesIO(wt_screen_file.getvalue())).convert("RGB")
-                        prompt_wt = """
-                        Ανάλυσε την οθόνη του WorldTracer και επέστρεψε ΜΟΝΟ JSON (Χωρίς Markdown):
-                        {
-                          "File_Reference": "Το File Reference Number (π.χ. ATHAF12345)",
-                          "Tags_On_Screen": ["Tag1", "Tag2"] (αφαίρεσε κενά από τους αριθμούς)
-                        }
-                        """
-                        response_wt = client.models.generate_content(
-                            model='gemini-2.5-flash',
-                            contents=[pil_wt, prompt_wt],
-                            config=types.GenerateContentConfig(response_mime_type="application/json")
-                        )
-                        clean_json_wt = response_wt.text.replace('```json', '').replace('```', '').strip()
-                        wt_data = json.loads(clean_json_wt)
-                        
-                        pir_number = wt_data.get("File_Reference", "N/A")
-                        tags_from_screen = [str(tag).replace(' ', '') for tag in wt_data.get("Tags_On_Screen", [])]
-                        
-                        if pir_number != "N/A" and tags_from_screen:
-                            matched_bags_indices = []
-                            for index, row in st.session_state.final_dataframe.iterrows():
-                                if row['STATUS'] != "🟢 ΟΛΟΚΛΗΡΩΣΗ":
-                                    current_tag = str(row['Tag Number']).replace(' ', '')
-                                    if current_tag in tags_from_screen:
-                                        matched_bags_indices.append(index)
-                            
-                            if matched_bags_indices:
-                                for idx in matched_bags_indices:
-                                    st.session_state.final_dataframe.at[idx, "File Reference / PIR"] = pir_number
-                                    st.session_state.final_dataframe.at[idx, "STATUS"] = "🟢 ΟΛΟΚΛΗΡΩΣΗ"
-                                st.success(f"📌 {len(matched_bags_indices)} αποσκευή(ες) έκλεισαν αυτόματα με το PIR: {pir_number}")
-                                time.sleep(1.5)
-                                st.rerun()
-                            else:
-                                st.error("Δεν βρέθηκε match μεταξύ των tags της οθόνης και των εκκρεμοτήτων στον πίνακα.")
+                        if wt_screen_file.size > MAX_SIZE:
+                            st.error(f"⚠️ Το αρχείο '{wt_screen_file.name}' είναι πολύ μεγάλο. Μέγιστο επιτρεπτό: 10MB.")
                         else:
-                            st.error("Δεν μπόρεσα να διαβάσω File Reference ή Tags από τη φωτογραφία της οθόνης.")
+                            wt_bytes = wt_screen_file.getvalue()
+                            pil_wt = Image.open(io.BytesIO(wt_bytes))
+                            pil_wt.verify()
+                            pil_wt = Image.open(io.BytesIO(wt_bytes)).convert("RGB")
+
+                            prompt_wt = """
+                            Ανάλυσε την οθόνη του WorldTracer και επέστρεψε ΜΟΝΟ JSON (Χωρίς Markdown):
+                            {
+                              "File_Reference": "Το File Reference Number (π.χ. ATHAF12345)",
+                              "Tags_On_Screen": ["Tag1", "Tag2"] (αφαίρεσε κενά από τους αριθμούς)
+                            }
+                            """
+                            response_wt = client.models.generate_content(
+                                model='gemini-2.5-flash',
+                                contents=[pil_wt, prompt_wt],
+                                config=types.GenerateContentConfig(response_mime_type="application/json")
+                            )
+                            clean_json_wt = response_wt.text.replace('```json', '').replace('```', '').strip()
+                            wt_data = json.loads(clean_json_wt)
+                            
+                            pir_number = wt_data.get("File_Reference", "N/A")
+                            tags_from_screen = [str(tag).replace(' ', '') for tag in wt_data.get("Tags_On_Screen", [])]
+                            
+                            if pir_number != "N/A" and tags_from_screen:
+                                matched_bags_indices = []
+                                for index, row in st.session_state.final_dataframe.iterrows():
+                                    if row['STATUS'] != "🟢 ΟΛΟΚΛΗΡΩΣΗ":
+                                        current_tag = str(row['Tag Number']).replace(' ', '')
+                                        if current_tag in tags_from_screen:
+                                            matched_bags_indices.append(index)
+                                
+                                if matched_bags_indices:
+                                    for idx in matched_bags_indices:
+                                        st.session_state.final_dataframe.at[idx, "File Reference / PIR"] = pir_number
+                                        st.session_state.final_dataframe.at[idx, "STATUS"] = "🟢 ΟΛΟΚΛΗΡΩΣΗ"
+                                    st.success(f"📌 {len(matched_bags_indices)} αποσκευή(ες) έκλεισαν αυτόματα με το PIR: {pir_number}")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                else:
+                                    st.error("Δεν βρέθηκε match μεταξύ των tags της οθόνης και των εκκρεμοτήτων στον πίνακα.")
+                            else:
+                                st.error("Δεν μπόρεσα να διαβάσω File Reference ή Tags από τη φωτογραφία της οθόνης.")
                     except (UnidentifiedImageError, Exception) as e:
                         st.error(f"Σφάλμα ανάγνωσης αρχείου εικόνας: {e}")
 
