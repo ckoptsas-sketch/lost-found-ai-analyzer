@@ -3,9 +3,10 @@ import pandas as pd
 from datetime import datetime
 from google import genai
 from google.genai import types
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 import json
 import time
+import io
 
 # ==========================================
 # 1. ΑΣΦΑΛΕΙΑ: ΣΥΣΤΗΜΑ LOGIN (Secrets based)
@@ -13,8 +14,10 @@ import time
 def check_password():
     if "password_correct" not in st.session_state:
         st.subheader("🔒 ATH Lost & Found - 🔑 Είσοδος στο Σύστημα")
+        
         st.text_input("Όνομα Χρήστη", key="username")
         st.text_input("Κωδικός Πρόσβασης", type="password", key="password")
+        
         if st.button("Σύνδεση"):
             if st.session_state["username"] == st.secrets.get("USER_NAME", "") and st.session_state["password"] == st.secrets.get("USER_PASSWORD", ""):
                 st.session_state["password_correct"] = True
@@ -61,10 +64,18 @@ if check_password():
 
     if uploaded_files:
         for file in uploaded_files:
-            pil_image = Image.open(file)
-            if file.name not in [x['id'] for x in st.session_state.photo_buffer]:
-                st.session_state.photo_buffer.append({"id": file.name, "image": pil_image})
-                st.success(f"Η φωτογραφία '{file.name}' προστέθηκε στο κύμα.")
+            try:
+                bytes_data = file.getvalue()
+                pil_image = Image.open(io.BytesIO(bytes_data))
+                pil_image = pil_image.convert("RGB")
+
+                if file.name not in [x['id'] for x in st.session_state.photo_buffer]:
+                    st.session_state.photo_buffer.append({"id": file.name, "image": pil_image})
+                    st.success(f"Η φωτογραφία '{file.name}' προστέθηκε στο κύμα.")
+            except UnidentifiedImageError:
+                st.error(f"⚠️ Το αρχείο '{file.name}' δεν είναι έγκυρη εικόνα. Παρακαλώ επιλέξτε ξανά.")
+            except Exception as e:
+                st.error(f"⚠️ Σφάλμα στο αρχείο '{file.name}': {e}")
 
     st.metric(label="Φωτογραφίες έτοιμες για ανάλυση", value=len(st.session_state.photo_buffer))
 
@@ -145,15 +156,15 @@ if check_password():
         if wt_screen_file is not None:
             if st.button("💾 ΑΥΤΟΜΑΤΗ ΕΠΑΛΗΘΕΥΣΗ & ΚΛΕΙΣΙΜΟ"):
                 with st.spinner("Ανάγνωση οθόνης συστήματος και σύγκριση..."):
-                    pil_wt = Image.open(wt_screen_file)
-                    prompt_wt = """
-                    Ανάλυσε την οθόνη του WorldTracer και επέστρεψε ΜΟΝΟ JSON (Χωρίς Markdown):
-                    {
-                      "File_Reference": "Το File Reference Number (π.χ. ATHAF12345)",
-                      "Tags_On_Screen": ["Tag1", "Tag2"] (αφαίρεσε κενά από τους αριθμούς)
-                    }
-                    """
                     try:
+                        pil_wt = Image.open(io.BytesIO(wt_screen_file.getvalue())).convert("RGB")
+                        prompt_wt = """
+                        Ανάλυσε την οθόνη του WorldTracer και επέστρεψε ΜΟΝΟ JSON (Χωρίς Markdown):
+                        {
+                          "File_Reference": "Το File Reference Number (π.χ. ATHAF12345)",
+                          "Tags_On_Screen": ["Tag1", "Tag2"] (αφαίρεσε κενά από τους αριθμούς)
+                        }
+                        """
                         response_wt = client.models.generate_content(
                             model='gemini-2.5-flash',
                             contents=[pil_wt, prompt_wt],
@@ -184,8 +195,8 @@ if check_password():
                                 st.error("Δεν βρέθηκε match μεταξύ των tags της οθόνης και των εκκρεμοτήτων στον πίνακα.")
                         else:
                             st.error("Δεν μπόρεσα να διαβάσω File Reference ή Tags από τη φωτογραφία της οθόνης.")
-                    except Exception as e:
-                        st.error(f"Σφάλμα ανάγνωσης οθόνης: {e}")
+                    except (UnidentifiedImageError, Exception) as e:
+                        st.error(f"Σφάλμα ανάγνωσης αρχείου εικόνας: {e}")
 
     st.markdown("---")
 
