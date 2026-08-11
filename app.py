@@ -4,7 +4,6 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 from PIL import Image, UnidentifiedImageError, ImageFile
-from pillow_heif import register_heif_opener
 import json
 import time
 import io
@@ -19,7 +18,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-register_heif_opener()
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 MAX_SIZE = 15 * 1024 * 1024  # 15 MB
 
@@ -151,7 +149,7 @@ if check_password():
     st.caption(f"Συνδεδεμένος Χρήστης: {st.session_state.get('logged_user', 'Agent')}")
 
     # =========================
-    # MOBILE-FRIENDLY INBOUND
+    # INBOUND
     # =========================
     st.markdown("## 📸 Βήμα 1: Νέο Κύμα")
 
@@ -160,7 +158,7 @@ if check_password():
     with tab1:
         inbound_files = st.file_uploader(
             "Ανέβασε φωτογραφίες",
-            type=["png", "jpg", "jpeg", "webp", "heic", "heif"],
+            type=["png", "jpg", "jpeg", "webp"],
             accept_multiple_files=True,
             key="inbound_uploader",
             label_visibility="visible",
@@ -250,7 +248,7 @@ if check_password():
     st.markdown("---")
 
     # =========================
-    # WT MOBILE-FRIENDLY
+    # WT
     # =========================
     st.markdown("## 🖥️ Βήμα 2: WorldTracer")
 
@@ -268,22 +266,18 @@ if check_password():
         with tabw1:
             wt_file = st.file_uploader(
                 "Ανέβασε φωτογραφία WorldTracer",
-                type=["png", "jpg", "jpeg", "webp", "heic", "heif"],
+                type=["png", "jpg", "jpeg", "webp"],
                 key="wt_uploader",
             )
             if wt_file is not None:
-                add_file_to_buffer(wt_file)  # προσωρινά δεν το κρατάμε στο ίδιο buffer
-                st.session_state.wt_buffer = []
                 try:
-                    st.session_state.wt_buffer.append(
-                        {
-                            "id": f"{wt_file.name}_{wt_file.size}_{wt_file.type}",
-                            "name": wt_file.name,
-                            "type": wt_file.type,
-                            "size": wt_file.size,
-                            "image": load_image_from_upload(wt_file),
-                        }
-                    )
+                    st.session_state.wt_buffer = [{
+                        "id": f"{wt_file.name}_{wt_file.size}_{wt_file.type}",
+                        "name": wt_file.name,
+                        "type": wt_file.type,
+                        "size": wt_file.size,
+                        "image": load_image_from_upload(wt_file),
+                    }]
                 except Exception as e:
                     st.error(f"Σφάλμα φόρτωσης WT: {e}")
 
@@ -293,17 +287,14 @@ if check_password():
                 key="wt_camera",
             )
             if wt_cam is not None:
-                st.session_state.wt_buffer = []
                 try:
-                    st.session_state.wt_buffer.append(
-                        {
-                            "id": f"{wt_cam.name}_{wt_cam.size}_{wt_cam.type}",
-                            "name": wt_cam.name,
-                            "type": wt_cam.type,
-                            "size": wt_cam.size,
-                            "image": load_image_from_upload(wt_cam),
-                        }
-                    )
+                    st.session_state.wt_buffer = [{
+                        "id": f"{wt_cam.name}_{wt_cam.size}_{wt_cam.type}",
+                        "name": wt_cam.name,
+                        "type": wt_cam.type,
+                        "size": wt_cam.size,
+                        "image": load_image_from_upload(wt_cam),
+                    }]
                 except Exception as e:
                     st.error(f"Σφάλμα φόρτωσης WT: {e}")
 
@@ -365,7 +356,7 @@ if check_password():
     st.markdown("---")
 
     # =========================
-    # TABLE + EXPORT
+    # TABLE
     # =========================
     st.markdown("## 📊 Κεντρικός Πίνακας")
 
